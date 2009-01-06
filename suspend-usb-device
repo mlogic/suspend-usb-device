@@ -52,6 +52,13 @@ if [ -z $1 ]; then
 fi
 
 set -u
+
+# root check
+if [ `id -u` -ne 0 ]; then
+    1>&2 echo error, must be run as root, exiting...
+    exit 1
+fi
+
 DEV_NAME=$1
 
 # umount it first
