@@ -63,9 +63,9 @@ DEV_NAME=$1
 
 # umount it first
 if mount | grep "^$DEV_NAME "; then
-    echo
-    echo "detected above partition is still mounted, can't suspend device"
-    echo "umount them first"
+    1>&2 echo
+    1>&2 echo "detected above partition is still mounted, can't suspend device"
+    1>&2 echo "umount them first"
     exit 1
 fi
 
@@ -81,11 +81,33 @@ USB_BUS_ID=${DEVICE##*/}
 
 if [ -z $DEVICE ]; then
     if [ -z $DEVICE ]; then
-        echo "cannot find it's parent USB device, "
-        echo "perhaps it's not an USB device?"
+        1>&2 echo "cannot find it's parent USB device, "
+        1>&2 echo "perhaps it's not an USB device?"
         exit 1
     fi
 fi
 
+# send SCSI stop command to it
+sdparm --command=stop "$DEV_NAME" >/dev/null
+
+# unbind it
 echo -n "${USB_BUS_ID}" > /sys/bus/usb/drivers/usb/unbind
-echo 'suspend' > /sys/$DEVICE/power/level
+
+# check if CONFIG_USB_SUSPEND is enabled
+POWER_LEVEL_FILE=/sys${DEVICE}/power/level
+if [ ! -f "$POWER_LEVEL_FILE" ]; then
+    1>&2 cat<<EOF
+It's safe to remove the USB device now but better can be done. The
+power level control file $POWER_LEVEL_FILE
+doesn't exist on the system so I have no way to put the USB device
+into suspend mode, perhaps you don't have CONFIG_USB_SUSPEND enabled
+in your running kernel.
+
+Read
+http://elliotli.blogspot.com/2009/01/safely-remove-usb-hard-drive-in-linux.html
+for an detailed explanation.
+EOF
+    exit 3
+fi
+
+echo 'suspend' > "$POWER_LEVEL_FILE"
