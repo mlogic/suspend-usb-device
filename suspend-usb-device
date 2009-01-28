@@ -62,7 +62,7 @@ fi
 DEV_NAME=$1
 
 # umount it first
-if mount | grep "^$DEV_NAME "; then
+if mount | grep "^$DEV_NAME[[:digit:]]* "; then
     1>&2 echo
     1>&2 echo "detected above partition is still mounted, can't suspend device"
     1>&2 echo "umount them first"
