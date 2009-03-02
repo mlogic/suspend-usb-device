@@ -26,16 +26,21 @@ usage()
     cat<<EOF
 suspend-usb-device  Copyright (C) 2009  Yan Li <elliot.li.tech@gmail.com>
 
-This program sends a SYNCHRONIZE CACHE command followed by a
-START-STOP command (if the device supports it), and then suspends the
-USB port. At this point you can remove / disconnect your USB device
-safely.
+This script is designed to properly put an USB device into suspend
+mode that can then be unplugged safely. It sends a SYNCHRONIZE CACHE
+command followed by a START-STOP command (if the device supports it),
+unbinds the device from the driver and then suspends the USB
+port. After that you can disconnect your USB device safely.
 
 usage:
-$0 dev
+$0 [options] dev
 
 sample:
 $0 /dev/sde
+
+options:
+  -l     show the device and USB bus ID only
+  -h     print this usage
 
 This program comes with ABSOLUTELY NO WARRANTY.  This is free
 software, and you are welcome to redistribute it under certain
@@ -44,24 +49,33 @@ source code file.
 EOF
 }
 
-set -e
+set -e -u
 
-if [ -z $1 ]; then
+SHOW_DEVICE_ONLY=0
+while getopts "l" opt; do
+    case "$opt" in
+        h)
+            usage
+            exit 2
+            ;;
+        l)
+            SHOW_DEVICE_ONLY=1
+            ;;
+        ?)
+            echo
+            usage
+            exit 2
+            ;;
+    esac
+done
+DEV_NAME=${!OPTIND:-}
+
+if [ -z ${DEV_NAME} ]; then
     usage
     exit 2
 fi
 
-set -u
-
-# root check
-if [ `id -u` -ne 0 ]; then
-    1>&2 echo error, must be run as root, exiting...
-    exit 1
-fi
-
-DEV_NAME=$1
-
-# umount it first
+# mount checking
 if mount | grep "^$DEV_NAME[[:digit:]]* "; then
     1>&2 echo
     1>&2 echo "detected above partition is still mounted, can't suspend device"
@@ -79,6 +93,13 @@ DEVICE=$(udevinfo --query=path --name=${DEV_NAME} --attribute-walk | \
 # the trailing basename of ${DEVICE} is USB_BUS_ID
 USB_BUS_ID=${DEVICE##*/}
 
+if [ ${SHOW_DEVICE_ONLY} -eq 1 ]; then
+    echo Device: ${DEVICE}
+    echo USB bus ID: ${USB_BUS_ID}
+    exit 0
+fi
+
+
 if [ -z $DEVICE ]; then
     if [ -z $DEVICE ]; then
         1>&2 echo "cannot find it's parent USB device, "
@@ -87,7 +108,18 @@ if [ -z $DEVICE ]; then
     fi
 fi
 
-# send SCSI stop command to it
+# flush all buffers
+sync
+
+# root check
+if [ `id -u` -ne 0 ]; then
+    1>&2 echo error, must be run as root, exiting...
+    exit 1
+fi
+
+
+# send SCSI sync,stop command to it
+sdparm --command=sync "$DEV_NAME" >/dev/null
 sdparm --command=stop "$DEV_NAME" >/dev/null
 
 # unbind it
