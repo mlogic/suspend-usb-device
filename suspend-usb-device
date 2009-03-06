@@ -118,8 +118,10 @@ if [ `id -u` -ne 0 ]; then
 fi
 
 
-# send SCSI sync,stop command to it
-sdparm --command=sync "$DEV_NAME" >/dev/null
+# send SCSI sync command, some devices don't support this so we just
+# ignore errors
+sdparm --command=sync "$DEV_NAME" >/dev/null || true
+# send SCSI stop command
 sdparm --command=stop "$DEV_NAME" >/dev/null
 
 # unbind it
