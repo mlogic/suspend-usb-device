@@ -21,6 +21,10 @@
 #  To reach the auther, please write an email to the address as stated
 #  above.
 
+#  ACKNOWLEDGEMENTS:
+#      Christian Schmitt <chris@ilovelinux.de> for firewire supporting
+
+
 usage()
 {
     cat<<EOF
@@ -83,27 +87,28 @@ if mount | grep "^$DEV_NAME[[:digit:]]* "; then
     exit 1
 fi
 
-# looking for the parent device with name like
-# /devices/pci0000:00/0000:00:1d.7/usb5/5-8
+# looking for its parent device with name like
+# /devices/pci0000:00/0000:00:1d.7/usb5/5-8 (or /fw5/fw5-8 for firewire devices)
 
 DEVICE=$(udevadm info --query=path --name=${DEV_NAME} --attribute-walk | \
-    egrep "parent device.*usb[[:digit:]]+/[[:digit:]]+-[[:digit:]]+'" | \
+    egrep "parent device.*(usb|fw)[[:digit:]]+/(fw)*[[:digit:]]+-[[:digit:]]+'" | \
     head -n 1 | cut -d"'" -f2)
 
-# the trailing basename of ${DEVICE} is USB_BUS_ID
-USB_BUS_ID=${DEVICE##*/}
+# the trailing basename of ${DEVICE} is DEV_BUS_ID ("5-8" in the
+# sample above)
+DEV_BUS_ID=${DEVICE##*/}
 
 if [ ${SHOW_DEVICE_ONLY} -eq 1 ]; then
     echo Device: ${DEVICE}
-    echo USB bus ID: ${USB_BUS_ID}
+    echo Bus ID: ${DEV_BUS_ID}
     exit 0
 fi
 
 
 if [ -z $DEVICE ]; then
     if [ -z $DEVICE ]; then
-        1>&2 echo "cannot find it's parent USB device, "
-        1>&2 echo "perhaps it's not an USB device?"
+        1>&2 echo "cannot find it's parent USB/Firewire device, "
+        1>&2 echo "perhaps it's not an USB/Firewire device?"
         exit 1
     fi
 fi
@@ -125,12 +130,19 @@ sdparm --command=sync "$DEV_NAME" >/dev/null || true
 sdparm --command=stop "$DEV_NAME" >/dev/null
 
 # unbind it
-echo -n "${USB_BUS_ID}" > /sys/bus/usb/drivers/usb/unbind
+if [[ "${DEV_BUS_ID}" == fw* ]]
+then
+    echo -n "${DEV_BUS_ID}" > /sys/bus/firewire/drivers/sbp2/unbind
+else
+    echo -n "${DEV_BUS_ID}" > /sys/bus/usb/drivers/usb/unbind
 
-# check if CONFIG_USB_SUSPEND is enabled
-POWER_LEVEL_FILE=/sys${DEVICE}/power/level
-if [ ! -f "$POWER_LEVEL_FILE" ]; then
-    1>&2 cat<<EOF
+    # suspend it if it's an USB device (we have to way to suspend a
+    # firewire device yet)
+
+    # check if CONFIG_USB_SUSPEND is enabled
+    POWER_LEVEL_FILE=/sys${DEVICE}/power/level
+    if [ ! -f "$POWER_LEVEL_FILE" ]; then
+        1>&2 cat<<EOF
 It's safe to remove the USB device now but better can be done. The
 power level control file $POWER_LEVEL_FILE
 doesn't exist on the system so I have no way to put the USB device
@@ -141,7 +153,8 @@ Read
 http://elliotli.blogspot.com/2009/01/safely-remove-usb-hard-drive-in-linux.html
 for an detailed explanation.
 EOF
-    exit 3
-fi
+        exit 3
+    fi
 
-echo 'suspend' > "$POWER_LEVEL_FILE"
+    echo 'suspend' > "$POWER_LEVEL_FILE"
+fi
