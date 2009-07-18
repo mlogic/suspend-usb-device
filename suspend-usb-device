@@ -23,6 +23,8 @@
 
 #  ACKNOWLEDGEMENTS:
 #      Christian Schmitt <chris@ilovelinux.de> for firewire supporting
+#      David <d.tonhofer@m-plify.com> for improving parent device
+#      search and verbose output message
 
 
 usage()
@@ -45,6 +47,7 @@ $0 /dev/sde
 options:
   -l     show the device and USB bus ID only
   -h     print this usage
+  -v     verbose
 
 This program comes with ABSOLUTELY NO WARRANTY.  This is free
 software, and you are welcome to redistribute it under certain
@@ -56,7 +59,8 @@ EOF
 set -e -u
 
 SHOW_DEVICE_ONLY=0
-while getopts "l" opt; do
+VERBOSE=0
+while getopts "vlh" opt; do
     case "$opt" in
         h)
             usage
@@ -64,6 +68,9 @@ while getopts "l" opt; do
             ;;
         l)
             SHOW_DEVICE_ONLY=1
+            ;;
+        v)
+            VERBOSE=1
             ;;
         ?)
             echo
@@ -80,14 +87,16 @@ if [ -z ${DEV_NAME} ]; then
 fi
 
 # mount checking
-if mount | grep "^$DEV_NAME[[:digit:]]* "; then
+if mount | grep "^${DEV_NAME}[[:digit:]]* "; then
     1>&2 echo
-    1>&2 echo "detected above partition is still mounted, can't suspend device"
-    1>&2 echo "umount them first"
+    1>&2 echo "the above disk or partition is still mounted, can't suspend device"
+    1>&2 echo "unmount it first using umount"
     exit 1
 fi
 
-# looking for the grand-parent device of the SCSI host with name like
+# looking for the parent of the device with type "usb-storage:usb", it
+# is the grand-parent device of the SCSI host, and it's devpath is
+# like
 # /devices/pci0000:00/0000:00:1d.7/usb5/5-8 (or /fw5/fw5-8 for firewire devices)
 
 # without an USB hub, the device path looks like:
@@ -102,24 +111,22 @@ DEVICE=$(udevadm info --query=path --name=${DEV_NAME} --attribute-walk | \
     egrep "looking at parent device" | head -1 | \
     sed -e "s/.*looking at parent device '\(\/devices\/.*\)\/.*\/host.*/\1/g")
 
+if [ -z $DEVICE ]; then
+    1>&2 echo "cannot find appropriate parent USB/Firewire device, "
+    1>&2 echo "perhaps ${DEV_NAME} is not an USB/Firewire device?"
+    exit 1
+fi
 
 # the trailing basename of ${DEVICE} is DEV_BUS_ID ("5-8" in the
 # sample above)
 DEV_BUS_ID=${DEVICE##*/}
 
+[[ $VERBOSE == 1 ]] && echo "Found device $DEVICE associated to $DEV_NAME; USB bus id is $DEV_BUS_ID"
+
 if [ ${SHOW_DEVICE_ONLY} -eq 1 ]; then
     echo Device: ${DEVICE}
     echo Bus ID: ${DEV_BUS_ID}
     exit 0
-fi
-
-
-if [ -z $DEVICE ]; then
-    if [ -z $DEVICE ]; then
-        1>&2 echo "cannot find it's parent USB/Firewire device, "
-        1>&2 echo "perhaps it's not an USB/Firewire device?"
-        exit 1
-    fi
 fi
 
 # flush all buffers
@@ -133,22 +140,26 @@ fi
 
 
 # send SCSI sync command, some devices don't support this so we just
-# ignore errors
+# ignore errors with "|| true"
+[[ $VERBOSE == 1 ]] && echo "Syncing device $DEV_NAME"
 sdparm --command=sync "$DEV_NAME" >/dev/null || true
 # send SCSI stop command
+[[ $VERBOSE == 1 ]] && echo "Stopping device $DEV_NAME"
 sdparm --command=stop "$DEV_NAME" >/dev/null
 
-# unbind it
+# unbind it; if this yields "no such device", we are trying to unbind the wrong device
+[[ $VERBOSE == 1 ]] && echo "Unbinding device $DEV_BUS_ID"
 if [[ "${DEV_BUS_ID}" == fw* ]]
 then
     echo -n "${DEV_BUS_ID}" > /sys/bus/firewire/drivers/sbp2/unbind
 else
     echo -n "${DEV_BUS_ID}" > /sys/bus/usb/drivers/usb/unbind
 
-    # suspend it if it's an USB device (we have to way to suspend a
+    # suspend it if it's an USB device (we have no way to suspend a
     # firewire device yet)
 
     # check if CONFIG_USB_SUSPEND is enabled
+    [[ $VERBOSE == 1 ]] && echo "Checking whether $DEVICE can be suspended"
     POWER_LEVEL_FILE=/sys${DEVICE}/power/level
     if [ ! -f "$POWER_LEVEL_FILE" ]; then
         1>&2 cat<<EOF
@@ -165,5 +176,6 @@ EOF
         exit 3
     fi
 
+    [[ $VERBOSE == 1 ]] && echo "Suspending $DEVICE by writing to $POWER_LEVEL_FILE"
     echo 'suspend' > "$POWER_LEVEL_FILE"
 fi
