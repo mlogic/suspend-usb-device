@@ -87,12 +87,21 @@ if mount | grep "^$DEV_NAME[[:digit:]]* "; then
     exit 1
 fi
 
-# looking for its parent device with name like
+# looking for the grand-parent device of the SCSI host with name like
 # /devices/pci0000:00/0000:00:1d.7/usb5/5-8 (or /fw5/fw5-8 for firewire devices)
 
+# without an USB hub, the device path looks like:
+# /devices/pci0000:00/0000:00:1d.7/usb2/2-1/2-1:1.0/host5/target5:0:0/5:0:0:0
+# here the grand-parent of host5 is 2-1
+
+# when there's a USB HUB, the device path is like:
+# /devices/pci0000:00/0000:00:1d.0/usb5/5-2/5-2.2/5-2.2:1.0/host4/target4:0:0/4:0:0:0
+# and the grand-parent of host4 is 5-2.2
+
 DEVICE=$(udevadm info --query=path --name=${DEV_NAME} --attribute-walk | \
-    egrep "parent device.*(usb|fw)[[:digit:]]+/(fw)*[[:digit:]]+-[[:digit:]]+'" | \
-    head -n 1 | cut -d"'" -f2)
+    egrep "looking at parent device" | head -1 | \
+    sed -e "s/.*looking at parent device '\(\/devices\/.*\)\/.*\/host.*/\1/g")
+
 
 # the trailing basename of ${DEVICE} is DEV_BUS_ID ("5-8" in the
 # sample above)
