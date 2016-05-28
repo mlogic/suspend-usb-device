@@ -160,6 +160,7 @@ else
 
     # check if CONFIG_USB_SUSPEND is enabled
     [[ $VERBOSE == 1 ]] && echo "Checking whether $DEVICE can be suspended"
+    AUTOSUSPEND_FILE=/sys${DEVICE}/power/autosuspend
     POWER_LEVEL_FILE=/sys${DEVICE}/power/level
     if [ ! -f "$POWER_LEVEL_FILE" ]; then
         1>&2 cat<<EOF
@@ -177,5 +178,6 @@ EOF
     fi
 
     [[ $VERBOSE == 1 ]] && echo "Suspending $DEVICE by writing to $POWER_LEVEL_FILE"
-    echo 'suspend' > "$POWER_LEVEL_FILE"
+    echo "0" > "$AUTOSUSPEND_FILE"
+    echo "auto" > "$POWER_LEVEL_FILE"
 fi
