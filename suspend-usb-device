@@ -3,7 +3,8 @@
 #  suspend-usb-device: an easy-to-use script to properly put an USB
 #  device into suspend mode that can then be unplugged safely
 #
-#  Copyright (C) 2009, Yan Li <elliot.li.tech@gmail.com>
+#  Copyright (C) 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016,
+#  Yan Li <elliot.li.tech@gmail.com>
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -30,7 +31,7 @@
 usage()
 {
     cat<<EOF
-suspend-usb-device  Copyright (C) 2009  Yan Li <elliot.li.tech@gmail.com>
+suspend-usb-device  Copyright (C) 2009-2016, Yan Li <elliot.li.tech@gmail.com>
 
 This script is designed to properly put an USB device into suspend
 mode that can then be unplugged safely. It sends a SYNCHRONIZE CACHE
@@ -158,10 +159,14 @@ else
     # suspend it if it's an USB device (we have no way to suspend a
     # firewire device yet)
 
-    # check if CONFIG_USB_SUSPEND is enabled
+    # USB power level control is deprecated since 2.6.32. If both power/control
+    # and power/level files exist, we are using a new kernel that doesn't support
+    # force suspending a USB device. If only the power/level file exists, we
+    # will try to suspend the device.
     [[ $VERBOSE == 1 ]] && echo "Checking whether $DEVICE can be suspended"
     POWER_LEVEL_FILE=/sys${DEVICE}/power/level
-    if [ ! -f "$POWER_LEVEL_FILE" ]; then
+    POWER_CONTROL_FILE=/sys${DEVICE}/power/control
+    if [ ! -f "$POWER_CONTROL_FILE" -a ! -f "$POWER_LEVEL_FILE" ]; then
         1>&2 cat<<EOF
 It's safe to remove the USB device now but better can be done. The
 power level control file $POWER_LEVEL_FILE
@@ -174,8 +179,10 @@ http://elliotli.blogspot.com/2009/01/safely-remove-usb-hard-drive-in-linux.html
 for an detailed explanation.
 EOF
         exit 3
+    elif [ ! -f "$POWER_CONTROL_FILE" ]; then
+        # Only the power/level file exists, try to suspend the device
+        [[ $VERBOSE == 1 ]] && echo "Suspending $DEVICE by writing to $POWER_LEVEL_FILE"
+        echo 'suspend' > "$POWER_LEVEL_FILE"
     fi
-
-    [[ $VERBOSE == 1 ]] && echo "Suspending $DEVICE by writing to $POWER_LEVEL_FILE"
-    echo 'suspend' > "$POWER_LEVEL_FILE"
+    # Do nothing if power/control or both files exist.
 fi
